@@ -1,0 +1,441 @@
+import datetime
+import pyttsx3
+import speech_recognition as sr
+import pandas as pd
+import random
+import csv
+import os
+from googletrans import Translator
+
+# ------------------ Enhanced Multilingual Configuration with Odia ------------------
+SUPPORTED_LANGUAGES = {
+    'english': {'code': 'en', 'speech_code': 'en-IN', 'voice_id': 0},
+    'hindi': {'code': 'hi', 'speech_code': 'hi-IN', 'voice_id': None},
+    'bengali': {'code': 'bn', 'speech_code': 'bn-IN', 'voice_id': None},
+    'odia': {'code': 'or', 'speech_code': 'or-IN', 'voice_id': None},
+    'tamil': {'code': 'ta', 'speech_code': 'ta-IN', 'voice_id': None},
+    'telugu': {'code': 'te', 'speech_code': 'te-IN', 'voice_id': None}
+}
+
+# Current language setting
+current_language = 'english'
+translator = Translator()
+
+# Odia health terms for better recognition
+ODIA_HEALTH_TERMS = {
+    "ଜ୍ୱର": "fever",
+    "କାଶ": "cough", 
+    "ମୁଣ୍ଡ ବ୍ୟଥା": "headache",
+    "ପେଟ ବ୍ୟଥା": "stomach pain",
+    "ନିଶ୍ୱାସ କଷ୍ଟ": "breathing difficulty",
+    "ଗଳା ବ୍ୟଥା": "sore throat",
+    "ବାନ୍ତି": "vomiting"
+}
+
+# Essential phrases in all languages
+LOCALIZED_PHRASES = {
+    'english': {
+        'greeting': "Hello, I am your multilingual health assistant. Please tell me your symptoms.",
+        'language_change': "Say 'change language' to switch languages, or 'quit' to exit.",
+        'listening': "Listening...",
+        'recognizing': "Recognizing...",
+        'no_recognition': "Unable to recognize your voice. Please try again.",
+        'goodbye': "Okay, take care. Goodbye!",
+        'consult_doctor': "Please consult a doctor.",
+        'language_changed': "Language changed successfully."
+    },
+    'hindi': {
+        'greeting': "नमस्ते, मैं आपका बहुभाषी स्वास्थ्य सहायक हूं। कृपया अपने लक्षण बताएं।",
+        'language_change': "'भाषा बदलें' कहें या 'बंद करें' कहें।",
+        'listening': "सुन रहा हूं...",
+        'recognizing': "पहचान रहा हूं...",
+        'no_recognition': "आपकी आवाज़ समझ नहीं आई। कृपया फिर कोशिश करें।",
+        'goodbye': "ठीक है, अपना ख्याल रखें। अलविदा!",
+        'consult_doctor': "कृपया डॉक्टर से सलाह लें।",
+        'language_changed': "भाषा सफलतापूर्वक बदल गई।"
+    },
+    'odia': {
+        'greeting': "ନମସ୍କାର, ମୁଁ ଆପଣଙ୍କର ବହୁଭାଷୀ ସ୍ୱାସ୍ଥ୍ୟ ସହାୟକ। ଆପଣଙ୍କର ଲକ୍ଷଣ କୁହନ୍ତୁ।",
+        'language_change': "'ଭାଷା ବଦଳାନ୍ତୁ' କୁହନ୍ତୁ କିମ୍ବା 'ବନ୍ଦ କର' କୁହନ୍ତୁ।",
+        'listening': "ଶୁଣୁଛି...",
+        'recognizing': "ଚିହ୍ନଟ କରୁଛି...",
+        'no_recognition': "ଆପଣଙ୍କ ସ୍ୱର ବୁଝିପାରୁନାହିଁ। ଦୟାକରି ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।",
+        'goodbye': "ଠିକ ଅଛି, ଯତ୍ନ ନିଅନ୍ତୁ। ବିଦାୟ!",
+        'consult_doctor': "ଦୟାକରି ଡାକ୍ତରଙ୍କ ସହ ଯୋଗାଯୋଗ କରନ୍ତୁ।",
+        'language_changed': "ଭାଷା ସଫଳତାର ସହ ବଦଳାଯାଇଛି।"
+    },
+    'bengali': {
+        'greeting': "নমস্কার, আমি আপনার বহুভাষিক স্বাস্থ্য সহায়ক। আপনার লক্ষণ বলুন।",
+        'language_change': "'ভাষা পরিবর্তন' বলুন বা 'বন্ধ কর' বলুন।",
+        'listening': "শুনছি...",
+        'recognizing': "শনাক্ত করছি...",
+        'no_recognition': "আপনার কণ্ঠস্বর বুঝতে পারছি না। আবার চেষ্টা করুন।",
+        'goodbye': "ঠিক আছে, যত্ন নিন। বিদায়!",
+        'consult_doctor': "দয়া করে ডাক্তারের সাথে যোগাযোগ করুন।",
+        'language_changed': "ভাষা সফলভাবে পরিবর্তন হয়েছে।"
+    },
+    'tamil': {
+        'greeting': "வணக்கம், நான் உங்கள் பல மொழி சுகாதார உதவியாளர். உங்கள் அறிகுறிகளை கூறுங்கள்।",
+        'language_change': "'மொழி மாற்று' என்று சொல்லுங்கள் அல்லது 'நிறுத்து' என்று சொல்லுங்கள்।",
+        'listening': "கேட்கிறேன்...",
+        'recognizing': "அடையாளம் காண்கிறேன்...",
+        'no_recognition': "உங்கள் குரலை புரிந்து கொள்ள முடியவில்லை. மீண்டும் முயற்சிக்கவும்।",
+        'goodbye': "சரி, கவனமாக இருங்கள். வணக்கம்!",
+        'consult_doctor': "தயவுசெய்து மருத்துவரை அணுகவும்।",
+        'language_changed': "மொழி வெற்றிகரமாக மாற்றப்பட்டது।"
+    },
+    'telugu': {
+        'greeting': "నమస్కారం, నేను మీ బహుభాషా ఆరోగ్య సహాయకుడను. మీ లక్షణాలు చెప్పండి।",
+        'language_change': "'భాష మార్చు' అనండి లేదా 'ఆపు' అనండి।",
+        'listening': "వింటున్నాను...",
+        'recognizing': "గుర్తించాను...",
+        'no_recognition': "మీ గొంతు గుర్తించలేకపోతున్నాను. దయచేసి మళ్లీ ప్రయత్నించండి।",
+        'goodbye': "సరే, జాగ్రత్తగా ఉండండి. వీడ్కోలు!",
+        'consult_doctor': "దయచేసి వైద్యుడిని సంప్రదించండి।",
+        'language_changed': "భాష విజయవంతంగా మార్చబడింది।"
+    }
+}
+
+# ------------------ Speech Engine with Multilingual Support ------------------
+engine = pyttsx3.init('sapi5')
+voices = engine.getProperty('voices')
+
+def detect_available_voices():
+    """Detect and map available voices for different languages"""
+    available_voices = {}
+    for i, voice in enumerate(voices):
+        voice_name = voice.name.lower()
+        if 'english' in voice_name or 'david' in voice_name or 'zira' in voice_name:
+            available_voices['en'] = i
+        elif 'hindi' in voice_name or 'heera' in voice_name:
+            available_voices['hi'] = i
+        elif 'bengali' in voice_name:
+            available_voices['bn'] = i
+        elif 'odia' in voice_name or 'oriya' in voice_name:
+            available_voices['or'] = i
+        elif 'tamil' in voice_name:
+            available_voices['ta'] = i
+        elif 'telugu' in voice_name:
+            available_voices['te'] = i
+    return available_voices
+
+available_voices = detect_available_voices()
+if available_voices:
+    engine.setProperty('voice', voices[list(available_voices.values())[0]].id)
+else:
+    engine.setProperty('voice', voices[0].id)
+
+
+def speak(audio, lang_code='en'):
+    """Enhanced speak function with multilingual support"""
+    print(f"Bot ({current_language.title()}):", audio)
+    
+    # Set appropriate voice if available
+    if lang_code in available_voices:
+        engine.setProperty('voice', voices[available_voices[lang_code]].id)
+    else:
+        engine.setProperty('voice', voices[0].id)
+    
+    # Adjust speech rate for different languages
+    if lang_code in ['hi', 'bn', 'ta', 'te', 'or']:
+        engine.setProperty('rate', 140)
+    else:
+        engine.setProperty('rate', 160)
+    
+    engine.say(audio)
+    engine.runAndWait()
+
+def get_localized_text(key):
+    """Get localized text for current language"""
+    return LOCALIZED_PHRASES.get(current_language, LOCALIZED_PHRASES['english']).get(key, key)
+
+def takeCommand(lang_code='en-IN'):
+    """Enhanced speech recognition with multilingual support"""
+    listener = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            print(f"🎙 {get_localized_text('listening')}")
+            listener.pause_threshold = 1
+            listener.energy_threshold = 300
+            audio = listener.listen(source, 0, 4)
+        
+        print(f"🔍 {get_localized_text('recognizing')}")
+        query = listener.recognize_google(audio, language=lang_code)
+        print(f"You ({current_language.title()}):", query)
+        return query.lower()
+    except Exception as e:
+        print(get_localized_text('no_recognition'))
+        return "none"
+
+# ------------------ Translation Functions ------------------
+def translate_text(text, target_lang='en'):
+    """Translate text to target language"""
+    if target_lang == 'en':
+        return text
+    try:
+        result = translator.translate(text, dest=target_lang)
+        return result.text
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
+
+def enhance_symptom_detection(user_input):
+    """Enhanced symptom detection including Odia terms"""
+    # This is fine as it converts non-English input to English terms for processing
+    if current_language == 'odia':
+        for odia_term, english_term in ODIA_HEALTH_TERMS.items():
+            user_input = user_input.replace(odia_term, english_term)
+    return user_input
+
+# ------------------ Language Selection ------------------
+def change_language():
+    """Allow user to change language"""
+    global current_language
+    print("\n🌐 Available Languages / ଉପଲବ୍ଧ ଭାଷା:")
+    lang_options = [
+        "1. English",
+        "2. हिंदी (Hindi)", 
+        "3. বাংলা (Bengali)",
+        "4. ଓଡ଼ିଆ (Odia)",
+        "5. தமிழ் (Tamil)",
+        "6. తెలుగు (Telugu)"
+    ]
+    
+    for option in lang_options:
+        print(option)
+    
+    try:
+        # User choice is 1-indexed, so we subtract 1
+        choice = int(input("\nSelect language (number): ")) - 1
+        selected_lang = list(SUPPORTED_LANGUAGES.keys())[choice]
+        current_language = selected_lang
+        
+        # Update TTS voice
+        lang_code = SUPPORTED_LANGUAGES[current_language]['code']
+        if lang_code in available_voices:
+            engine.setProperty('voice', voices[available_voices[lang_code]].id)
+        
+        confirmation = get_localized_text('language_changed')
+        speak(confirmation, lang_code)
+        return True
+    except:
+        print("Invalid selection. Keeping current language.")
+        return False
+
+# ------------------ Load Data ------------------
+data_path = os.path.dirname(os.path.abspath(__file__))
+
+try:
+    training = pd.read_csv(os.path.join(data_path, "Data", "Training.csv"))
+    
+    # Build disease → symptoms mapping
+    diseases_data = {}
+    for col in training.columns[:-1]:
+        for disease in training['prognosis'].unique():
+            if disease not in diseases_data:
+                diseases_data[disease] = []
+            if training.loc[training['prognosis'] == disease, col].any():
+                diseases_data[disease].append(col)
+    
+    # Load descriptions & precautions
+    description_dict = {}
+    precaution_dict = {}
+    
+    def load_descriptions():
+        try:
+            with open(os.path.join(data_path, "MasterData", "symptom_Description.csv"), encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 2:
+                        description_dict[row[0].strip()] = row[1].strip()
+        except:
+            print("Description file not found. Using basic descriptions.")
+    
+    def load_precautions():
+        try:
+            with open(os.path.join(data_path, "MasterData", "symptom_precaution.csv"), encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 2:
+                        precaution_dict[row[0].strip()] = row[1:]
+        except:
+            print("Precautions file not found. Using basic advice.")
+    
+    load_descriptions()
+    load_precautions()
+
+except Exception as e:
+    print(f"Data loading error: {e}")
+    # Fallback basic data
+    diseases_data = {
+        "Common Cold": ["cough", "sneezing", "runny_nose"],
+        "Fever": ["high_fever", "headache", "body_ache"],
+        "Malaria": ["fever", "chills", "headache"]
+    }
+    description_dict = {
+        "Common Cold": "A viral infection of the upper respiratory tract.",
+        "Fever": "Elevated body temperature often due to infection.",
+        "Malaria": "A mosquito-borne disease caused by parasites."
+    }
+    precaution_dict = {
+        "Common Cold": ["Rest well", "Drink warm fluids", "Avoid cold foods"],
+        "Fever": ["Take rest", "Drink plenty of water", "Consult doctor if persists"],
+        "Malaria": ["Use mosquito nets", "Take prescribed medicines", "Seek immediate medical care"]
+    }
+
+# ------------------ Conversation State ------------------
+conversation_state = {
+    "asked_questions": [],
+    "possible_diseases": [],
+    "question_count": 0,
+    "finished": False
+}
+
+def reset_state():
+    conversation_state["asked_questions"] = []
+    conversation_state["possible_diseases"] = []
+    conversation_state["question_count"] = 0
+    conversation_state["finished"] = False
+
+# ------------------ Enhanced Chatbot Logic ------------------
+def chatbot_response(user_input):
+    """Enhanced chatbot with multilingual responses"""
+    global current_language # Need this to ensure language is used in translation logic
+    lang_code = SUPPORTED_LANGUAGES[current_language]['code']
+    
+    if conversation_state["finished"]:
+        reset_state()
+
+    if not conversation_state["possible_diseases"]:
+        conversation_state["possible_diseases"] = list(diseases_data.keys())
+
+    enhanced_input = enhance_symptom_detection(user_input)
+    
+    # Translate user input to English for processing
+    english_input = enhanced_input
+    if current_language != 'english':
+        try:
+            # Only translate if the input is likely not already English (prevents double translation errors)
+            english_input = translator.translate(enhanced_input, dest='en').text.lower()
+        except:
+            pass
+
+    # Match symptoms (This logic remains in English/Symptom Key names)
+    matching_diseases = []
+    for disease, symptoms in diseases_data.items():
+        for s in symptoms:
+            s_clean = s.replace("_", " ").lower()
+            if s_clean in english_input or ("yes" in english_input and s_clean in conversation_state["asked_questions"]): # Added logic for 'yes' if symptom was recently asked
+                matching_diseases.append(disease)
+                break
+    
+    if matching_diseases:
+        conversation_state["possible_diseases"] = list(
+            set(conversation_state["possible_diseases"]) & set(matching_diseases)
+        )
+
+    # --- DIAGNOSIS BRANCH ---
+    if conversation_state["question_count"] >= 5 or len(conversation_state["possible_diseases"]) <= 1:
+        if conversation_state["possible_diseases"]:
+            diagnosis = random.choice(conversation_state["possible_diseases"])
+            desc = description_dict.get(diagnosis, "No description available.")
+            precautions = precaution_dict.get(diagnosis, [])
+            
+            # Assemble English Reply
+            reply = f"Based on your symptoms, you may have {diagnosis}. About it: {desc}"
+            if precautions:
+                reply += "\nPrecautions:\n"
+                for i, p in enumerate(precautions[:3], 1):
+                    reply += f"{i}. {p}\n"
+        else:
+            reply = f"Sorry, I couldn't identify a specific disease. {get_localized_text('consult_doctor')}"
+        
+        conversation_state["finished"] = True
+        
+        # Translate final diagnosis reply to current language
+        if current_language != 'english':
+            reply = translate_text(reply, lang_code)
+        
+        return reply
+
+    # --- ASKING NEXT QUESTION BRANCH (THE FIX) ---
+    remaining_symptoms = []
+    for disease in conversation_state["possible_diseases"]:
+        for symptom in diseases_data[disease]:
+            # Use raw symptom key (e.g., 'dark_urine') to track if it was asked
+            if symptom not in conversation_state["asked_questions"]:
+                remaining_symptoms.append(symptom)
+
+    if not remaining_symptoms:
+        conversation_state["finished"] = True
+        reply = f"I need more info, but I'm out of questions. {get_localized_text('consult_doctor')}"
+        if current_language != 'english':
+            reply = translate_text(reply, lang_code)
+        return reply
+
+    # 1. Select the next raw English symptom key (e.g., 'dark_urine')
+    raw_symptom_key = random.choice(remaining_symptoms)
+    clean_symptom = raw_symptom_key.replace("_", " ") # e.g., 'dark urine'
+    
+    # 2. Add the English key to tracking lists
+    conversation_state["asked_questions"].append(raw_symptom_key)
+    conversation_state["question_count"] += 1
+
+    # 3. Define the generic English question phrase
+    english_question = f"Do you also have {clean_symptom}?"
+    
+    # 4. Translate the ENTIRE question phrase to current language
+    question = english_question
+    if current_language != 'english':
+        question = translate_text(english_question, lang_code)
+        
+    return question
+
+# ------------------ Enhanced Main Loop ------------------
+def main():
+    global current_language
+    
+    print("🤖 Multilingual Health Assistant")
+    print("Available languages:", list(SUPPORTED_LANGUAGES.keys()))
+    
+    # Welcome message
+    welcome_msg = get_localized_text('greeting')
+    lang_change_msg = get_localized_text('language_change')
+    
+    speak(welcome_msg, SUPPORTED_LANGUAGES[current_language]['code'])
+    speak(lang_change_msg, SUPPORTED_LANGUAGES[current_language]['code'])
+    
+    while True:
+        speech_code = SUPPORTED_LANGUAGES[current_language]['speech_code']
+        query = takeCommand(speech_code)
+        
+        if query in ["none", ""]:
+            continue
+            
+        # Handle language change
+        language_change_commands = [
+            "change language", "भाषा बदलें", "ভাষা পরিবর্তন", 
+            "ଭାଷା ବଦଳାନ୍ତୁ", "மொழி மாற்று", "భాష మార్చు"
+        ]
+        if any(cmd in query for cmd in language_change_commands):
+            change_language()
+            continue
+            
+        # Handle exit
+        exit_commands = [
+            "quit", "exit", "stop", "बंद करें", "বন্ধ কর", 
+            "ବନ୍ଦ କର", "நிறுத்து", "ఆపు"
+        ]
+        if any(cmd in query for cmd in exit_commands):
+            goodbye_msg = get_localized_text('goodbye')
+            speak(goodbye_msg, SUPPORTED_LANGUAGES[current_language]['code'])
+            break
+            
+        # Process health query
+        response = chatbot_response(query)
+        speak(response, SUPPORTED_LANGUAGES[current_language]['code'])
+
+if __name__ == "__main__":
+    # Ensure correct voice properties are set initially
+    detect_available_voices()
+    main()
